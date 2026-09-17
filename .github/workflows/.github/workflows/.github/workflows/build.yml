@@ -1,0 +1,337 @@
+name: Build APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      app_name:
+        description: "Application name"
+        required: true
+        default: "My HTML App"
+
+      package_name:
+        description: "Package name"
+        required: true
+        default: "com.sajeb.htmlapp"
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Accept Android licenses
+        run: |
+          yes | sdkmanager --licenses || true
+
+      - name: Install Android SDK
+        run: |
+          sdkmanager "platform-tools"
+          sdkmanager "platforms;android-35"
+          sdkmanager "build-tools;35.0.0"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.7"
+
+      - name: Create Android project
+        env:
+          APP_NAME: ${{ github.event.inputs.app_name }}
+          PACKAGE_NAME: ${{ github.event.inputs.package_name }}
+        run: |
+
+          PACKAGE_PATH=$(echo "$PACKAGE_NAME" | tr '.' '/')
+
+          mkdir -p "app/src/main/java/$PACKAGE_PATH"
+          mkdir -p "app/src/main/res/values"
+          mkdir -p "app/src/main/assets"
+
+          cat > settings.gradle <<'EOF'
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+
+          dependencyResolutionManagement {
+              repositoriesMode.set(
+                  RepositoriesMode.FAIL_ON_PROJECT_REPOS
+              )
+
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+
+          rootProject.name = "HTMLToAPK"
+          include(":app")
+          EOF
+
+          cat > build.gradle <<'EOF'
+          plugins {
+              id 'com.android.application' version '8.6.1' apply false
+          }
+          EOF
+
+          cat > gradle.properties <<'EOF'
+          android.useAndroidX=true
+          android.nonTransitiveRClass=true
+          EOF
+
+          cat > app/build.gradle <<EOF
+          plugins {
+              id 'com.android.application'
+          }
+
+          android {
+              namespace '$PACKAGE_NAME'
+              compileSdk 35
+
+              defaultConfig {
+                  applicationId '$PACKAGE_NAME'
+                  minSdk 23
+                  targetSdk 35
+                  versionCode 1
+                  versionName '1.0'
+              }
+          }
+          EOF
+
+          cat > app/src/main/res/values/styles.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+
+              <style
+                  name="AppTheme"
+                  parent="android:style/Theme.Material.Light.NoActionBar">
+
+                  <item name="android:fontFamily">sans</item>
+                  <item name="android:colorAccent">#16A66A</item>
+
+              </style>
+
+          </resources>
+          EOF
+
+          cat > app/src/main/AndroidManifest.xml <<EOF
+          <?xml version="1.0" encoding="utf-8"?>
+
+          <manifest
+              xmlns:android="http://schemas.android.com/apk/res/android">
+
+              <uses-permission
+                  android:name="android.permission.INTERNET" />
+
+              <application
+                  android:theme="@style/AppTheme"
+                  android:label="$APP_NAME"
+                  android:usesCleartextTraffic="true"
+                  android:hardwareAccelerated="true">
+
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true">
+
+                      <intent-filter>
+
+                          <action
+                              android:name="android.intent.action.MAIN" />
+
+                          <category
+                              android:name="android.intent.category.LAUNCHER" />
+
+                      </intent-filter>
+
+                  </activity>
+
+              </application>
+
+          </manifest>
+          EOF
+
+          cat > "app/src/main/java/$PACKAGE_PATH/MainActivity.java" <<EOF
+          package $PACKAGE_NAME;
+
+          import android.app.Activity;
+          import android.os.Bundle;
+          import android.webkit.WebSettings;
+          import android.webkit.WebView;
+          import android.webkit.WebViewClient;
+
+          public class MainActivity extends Activity {
+
+              private WebView webView;
+
+              @Override
+              protected void onCreate(Bundle savedInstanceState) {
+
+                  super.onCreate(savedInstanceState);
+
+                  webView = new WebView(this);
+
+                  setContentView(webView);
+
+                  WebSettings settings =
+                      webView.getSettings();
+
+                  settings.setJavaScriptEnabled(true);
+                  settings.setDomStorageEnabled(true);
+                  settings.setAllowFileAccess(true);
+                  settings.setAllowContentAccess(true);
+
+                  webView.setWebViewClient(
+                      new WebViewClient()
+                  );
+
+                  webView.loadUrl(
+                      "file:///android_asset/index.html"
+                  );
+              }
+
+              @Override
+              public void onBackPressed() {
+
+                  if (webView.canGoBack()) {
+
+                      webView.goBack();
+
+                  } else {
+
+                      super.onBackPressed();
+
+                  }
+              }
+          }
+          EOF
+
+          cat > app/src/main/assets/index.html <<EOF
+          <!DOCTYPE html>
+          <html lang="en">
+
+          <head>
+
+              <meta charset="UTF-8">
+
+              <meta
+                  name="viewport"
+                  content="width=device-width,
+                  initial-scale=1.0">
+
+              <title>$APP_NAME</title>
+
+              <style>
+
+                  * {
+                      box-sizing: border-box;
+                  }
+
+                  body {
+                      margin: 0;
+                      min-height: 100vh;
+                      display: flex;
+                      align-items: center;
+                      justify-content: center;
+                      font-family: Arial, sans-serif;
+                      background: #080b0a;
+                      color: white;
+                      padding: 20px;
+                  }
+
+                  .card {
+                      width: 100%;
+                      max-width: 430px;
+                      padding: 30px 20px;
+                      text-align: center;
+                      background: #111816;
+                      border-radius: 22px;
+                      box-shadow:
+                          0 15px 40px rgba(0,0,0,.4);
+                  }
+
+                  h1 {
+                      margin-bottom: 12px;
+                  }
+
+                  p {
+                      color: #b7c2bd;
+                      line-height: 1.6;
+                  }
+
+                  button {
+                      margin-top: 20px;
+                      width: 100%;
+                      padding: 15px;
+                      border: 0;
+                      border-radius: 12px;
+                      background: #16a66a;
+                      color: white;
+                      font-size: 17px;
+                      font-weight: bold;
+                  }
+
+              </style>
+
+          </head>
+
+          <body>
+
+              <div class="card">
+
+                  <h1>$APP_NAME</h1>
+
+                  <p>
+                      HTML to APK Builder
+                  </p>
+
+                  <p>
+                      Your Android APK is working successfully.
+                  </p>
+
+                  <button onclick="testApp()">
+                      TEST APP
+                  </button>
+
+              </div>
+
+              <script>
+
+                  function testApp() {
+
+                      alert(
+                          "APK is working successfully!"
+                      );
+
+                  }
+
+              </script>
+
+          </body>
+
+          </html>
+          EOF
+
+      - name: Build APK
+        run: |
+          gradle assembleDebug --no-daemon
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: generated-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
